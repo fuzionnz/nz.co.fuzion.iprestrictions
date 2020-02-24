@@ -42,3 +42,7 @@ cv en iprestrictions
 ## Known Issues
 
 (* FIXME *)
+
+## Similar Extensions
+
+https://lab.civicrm.org/extensions/floodcontrol and https://civicrm.org/extensions/civihoneypot
