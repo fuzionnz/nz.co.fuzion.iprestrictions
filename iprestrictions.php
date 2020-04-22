@@ -152,8 +152,7 @@ function iprestrictions_civicrm_cron($jobManager) {
   }
 }
 
-
-function iprestrictions_civicrm_postProcess($formName, &$form) {
+function iprestrictions_civicrm_validateForm($formName, &$fields, &$files, &$form, &$errors) {
   $blockInterval = Civi::settings()->get('block_interval');
   $maxTrials = Civi::settings()->get('no_of_trials');
   $maxTrialsInterval = Civi::settings()->get('time_for_trials');
@@ -164,6 +163,7 @@ function iprestrictions_civicrm_postProcess($formName, &$form) {
     CRM_Core_DAO::executeQuery("DELETE FROM civicrm_ip_tracker
     WHERE modified_date < DATE_SUB(NOW(), INTERVAL {$blockInterval} MINUTE)");
 
+    $currentTime = date('YmdHis');
     $pageId = $form->getVar( '_id' );
     $ipAddress = CRM_Utils_System::ipAddress();
     $query = "SELECT counter, last_submitted
@@ -174,8 +174,21 @@ function iprestrictions_civicrm_postProcess($formName, &$form) {
       AND last_submitted > DATE_SUB(NOW(), INTERVAL {$maxTrialsInterval} MINUTE)";
 
     $dao = CRM_Core_DAO::executeQuery($query);
-    if ($dao->fetch() && $dao->counter >= $maxTrials) {
-      CRM_Core_Error::fatal(ts('You have exceeded the maximum limit from a single IP Address. Please try again after some time.'));
+    if ($dao->fetch()) {
+      if ($dao->counter >= $maxTrials) {
+        $errors[] = $errorMsg = ts('You have exceeded the maximum number of payment attempts. Please wait a minute and try again.');
+        CRM_Core_Session::setStatus($errorMsg, '', 'error');
+        return;
+      }
+      $dao->counter += 1;
+      CRM_Core_DAO::executeQuery("UPDATE civicrm_ip_tracker
+      SET counter = {$dao->counter}, modified_date = {$currentTime}
+      WHERE ip_address = '{$ipAddress}'");
+    }
+    elseif ($dao->N == 0) {
+      CRM_Core_DAO::executeQuery("INSERT INTO civicrm_ip_tracker(entity_id, entity_name, ip_address, counter, last_submitted, modified_date)
+        VALUES ({$pageId}, 'civicrm_contribution_page', '{$ipAddress}', 1, '{$currentTime}', '{$currentTime}');
+      ");
     }
   }
   elseif ($formName == 'CRM_Contribute_Form_Contribution_Confirm') {
@@ -192,19 +205,17 @@ function iprestrictions_civicrm_postProcess($formName, &$form) {
     $dao = CRM_Core_DAO::executeQuery($query);
     if ($dao->fetch()) {
       if ($dao->counter >= $maxTrials) {
-        CRM_Core_Error::fatal(ts('You have exceeded the maximum limit from a single IP Address. Please try again after some time.'));
+        $errors[] = $errorMsg = ts('You have exceeded the maximum number of payment attempts. Please wait a minute and try again.');
+        CRM_Core_Session::setStatus($errorMsg, '', 'error');
+        return;
       }
       $dao->counter += 1;
       CRM_Core_DAO::executeQuery("UPDATE civicrm_ip_tracker
       SET counter = {$dao->counter}, modified_date = {$currentTime}
       WHERE ip_address = '{$ipAddress}'");
     }
-    elseif ($dao->N == 0) {
-      CRM_Core_DAO::executeQuery("INSERT INTO civicrm_ip_tracker(entity_id, entity_name, ip_address, counter, last_submitted, modified_date)
-        VALUES ({$pageId}, 'civicrm_contribution_page', '{$ipAddress}', 1, '{$currentTime}', '{$currentTime}');
-      ");
-    }
   }
+  return;
 }
 
 // --- Functions below this ship commented out. Uncomment as required. ---
